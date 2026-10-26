@@ -1,0 +1,15 @@
+zerops:
+  - setup: app
+    build:
+      base: nodejs@22
+      buildCommands:
+        - echo tfacc-build
+      deployFiles:
+        - index.js
+    run:
+      base: nodejs@22
+      ports:
+        - port: 3000
+          protocol: tcp
+          httpSupport: true
+      start: node index.js

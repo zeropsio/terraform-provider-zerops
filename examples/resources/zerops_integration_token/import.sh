@@ -1,0 +1,1 @@
+terraform import zerops_integration_token.example organization_id/token_id

@@ -1,0 +1,17 @@
+/.*/
+!/.github/
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+crash.log
+/bin/
+/dist/
+tools/*/out/
+.cache/
+.dev.tfrc
+.terraform*
+*.tfstate*
+.smoke/
+.generated-docs/
+.acc-run.lock
