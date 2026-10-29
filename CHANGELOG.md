@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.1
+
+2026-10-29
+
+- Expose a public `provider` Go package for embedding the fully registered provider, for example in the Pulumi bridge.
+- Add a User-Agent product option for embedding applications; the default Terraform User-Agent is unchanged.
+- No resource or data source behavior changes.
+
 ## v0.1.0
 
 2026-10-26

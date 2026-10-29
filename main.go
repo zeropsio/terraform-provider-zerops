@@ -5,9 +5,10 @@ import (
 	"flag"
 	"log"
 
+	framework "github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
-	"github.com/zeropsio/terraform-provider-zerops/internal/provider"
-	"github.com/zeropsio/terraform-provider-zerops/internal/registry"
+
+	"github.com/zeropsio/terraform-provider-zerops/provider"
 )
 
 // version is replaced by release builds using -ldflags '-X main.version=...'.
@@ -17,7 +18,8 @@ func main() {
 	var debug bool
 	flag.BoolVar(&debug, "debug", false, "Run with debugger support")
 	flag.Parse()
-	if err := providerserver.Serve(context.Background(), provider.New(version, registry.New()), providerserver.ServeOpts{Address: "registry.terraform.io/zeropsio/zerops", Debug: debug}); err != nil {
+	factory := func() framework.Provider { return provider.New(version) }
+	if err := providerserver.Serve(context.Background(), factory, providerserver.ServeOpts{Address: "registry.terraform.io/zeropsio/zerops", Debug: debug}); err != nil {
 		log.Fatal(err)
 	}
 }

@@ -39,6 +39,7 @@ type zeropsProvider struct {
 	version   string
 	registry  Registry
 	transport http.RoundTripper
+	product   string
 }
 type configModel struct {
 	Endpoint            types.String `tfsdk:"endpoint"`
@@ -48,15 +49,37 @@ type configModel struct {
 	PostgresqlMinDiskGB types.Number `tfsdk:"postgresql_min_disk_gb"`
 }
 
+// Options customizes provider construction.
+type Options struct {
+	// Transport is shared by API calls and archive uploads; nil uses the default transport.
+	Transport http.RoundTripper
+	// Product, when set, identifies an embedding product (for example "pulumi-zerops/0.1.0").
+	// It leads the User-Agent header instead of the Terraform CLI version.
+	Product string
+}
+
 func New(version string, reg Registry) func() framework.Provider {
-	return NewWithTransport(version, reg, nil)
+	return NewWithOptions(version, reg, Options{})
 }
 
 // NewWithTransport injects a transport shared by API calls and archive uploads.
 func NewWithTransport(version string, reg Registry, transport http.RoundTripper) func() framework.Provider {
+	return NewWithOptions(version, reg, Options{Transport: transport})
+}
+
+// NewWithOptions returns a provider constructor configured by opts.
+func NewWithOptions(version string, reg Registry, opts Options) func() framework.Provider {
 	return func() framework.Provider {
-		return &zeropsProvider{version: version, registry: reg, transport: transport}
+		return &zeropsProvider{version: version, registry: reg, transport: opts.Transport, product: opts.Product}
 	}
+}
+
+// userAgent identifies the caller: Terraform/OpenTofu by default, or the embedding product.
+func (p *zeropsProvider) userAgent(terraformVersion string) string {
+	if p.product != "" {
+		return fmt.Sprintf("%s terraform-provider-zerops/%s", p.product, p.version)
+	}
+	return fmt.Sprintf("terraform-provider-zerops/%s (terraform %s)", p.version, terraformVersion)
 }
 
 func (p *zeropsProvider) Metadata(_ context.Context, _ framework.MetadataRequest, resp *framework.MetadataResponse) {
@@ -205,7 +228,7 @@ func (p *zeropsProvider) Configure(ctx context.Context, req framework.ConfigureR
 	}
 	ctx = tflog.MaskMessageStrings(ctx, token)
 	ctx = tflog.MaskFieldValuesWithFieldKeys(ctx, "token", "authorization")
-	cfg := client.Config{Endpoint: endpoint, Token: token, UserAgent: fmt.Sprintf("terraform-provider-zerops/%s (terraform %s)", p.version, req.TerraformVersion), Transport: transport}
+	cfg := client.Config{Endpoint: endpoint, Token: token, UserAgent: p.userAgent(req.TerraformVersion), Transport: transport}
 	if os.Getenv("ZEROPS_SANDBOX") == "prod" {
 		guard, err := client.NewProdTransport(ctx, cfg, organization, os.Getenv("ZEROPS_PROD_LEDGER"), "provider")
 		if err != nil {

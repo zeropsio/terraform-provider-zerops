@@ -113,6 +113,18 @@ Full schemas and import instructions are available in the [Registry documentatio
 - The API's server-side Git builds may ignore tag or commit references and reject private repositories. Consult the deployment resource documentation for provider-side Git deployment options.
 - API failures can leave partially created resources that require manual cleanup in the Zerops dashboard.
 
+## Embedding the provider
+
+Go applications, such as a Pulumi bridge, can use the public `provider` package to construct the fully registered Terraform Plugin Framework provider:
+
+```go
+import "github.com/zeropsio/terraform-provider-zerops/provider"
+
+p := provider.New("0.1.1", provider.WithUserAgent("pulumi-zerops/0.1.0"))
+```
+
+`WithUserAgent` is optional. It identifies the embedding product in API requests as `pulumi-zerops/0.1.0 terraform-provider-zerops/0.1.1`; without it the provider retains its Terraform CLI User-Agent. The product must be nonempty and contain no whitespace or control characters.
+
 ## Development
 
 ```sh
