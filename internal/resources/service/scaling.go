@@ -65,11 +65,15 @@ func ScalingSchema(vertical, computed bool) schema.SingleNestedAttribute {
 				vs = nil
 			}
 			disk := k == "min_disk_gb" || k == "max_disk_gb"
+			ram := k == "min_ram_gb" || k == "max_ram_gb"
 			description := "Autoscaling " + k + " setting."
 			if disk && !computed {
 				description += " PostgreSQL defaults and bounds respect the provider postgresql_min_disk_gb floor."
 			}
-			a[k] = schema.NumberAttribute{Optional: !computed, Computed: computed || disk, MarkdownDescription: description, Validators: vs}
+			if ram && !computed {
+				description += " ClickHouse and Elasticsearch defaults and bounds respect their provider RAM floors (ZEROPS_CLICKHOUSE_MIN_RAM_GB and ZEROPS_ELASTICSEARCH_MIN_RAM_GB)."
+			}
+			a[k] = schema.NumberAttribute{Optional: !computed, Computed: computed || disk || ram, MarkdownDescription: description, Validators: vs}
 		}
 		var sv []validator.String
 		if !computed {

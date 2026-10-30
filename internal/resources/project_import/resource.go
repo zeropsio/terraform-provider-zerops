@@ -99,6 +99,10 @@ func (r *Resource) ModifyPlan(ctx context.Context, q resource.ModifyPlanRequest,
 	if org.IsNull() && m.OrganizationID.IsUnknown() && r.data != nil {
 		m.OrganizationID = types.StringValue(r.data.OrganizationID)
 	}
+	r.checkServiceModes(ctx, m, &p.Diagnostics)
+	if p.Diagnostics.HasError() {
+		return
+	}
 	if !q.State.Raw.IsNull() {
 		var old Model
 		p.Diagnostics.Append(q.State.Get(ctx, &old)...)

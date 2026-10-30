@@ -58,36 +58,71 @@ func DeleteTestProject(ctx context.Context, c client.API, id string) error {
 	return waiter.WaitNotFound(ctx, id, func(ctx context.Context) error { _, err := c.GetProject(ctx, id); return err }, []string{"projectNotFound"})
 }
 
-// MinimalServiceMemoryGB is shared by API and Terraform production fixtures.
-// PostgreSQL single@16 uses its catalog minimum of 0.25 GB RAM. The platform
-// currently fails to provision PostgreSQL with less than 2 GB of disk (generic
-// HTTP 500 error); direct-API fixtures must set that disk size explicitly.
-// Terraform fixtures rely on the provider disk floor instead.
-func MinimalServiceMemoryGB(typ string) float64 {
-	if typ == "postgresql:single@16" {
-		return 0.25
-	}
-	return 0.125
+// ServiceMinimum describes catalogue minimums for shared-CPU acceptance fixtures.
+// Containers is zero when the service rejects horizontal autoscaling settings.
+type ServiceMinimum struct {
+	CPU        int
+	RAMGB      float64
+	DiskGB     float64
+	Containers int
+	Managed    bool
 }
 
-// MinimalServiceInput pins production fixtures to one shared-CPU container.
-// Single-node managed types fix their own count and reject horizontal settings.
-// Development keeps its original API defaults and scaling coverage.
+var managedServiceMinimums = map[string]ServiceMinimum{
+	"postgresql":    {CPU: 1, RAMGB: 0.25, DiskGB: 2, Managed: true},
+	"mariadb":       {CPU: 1, RAMGB: 0.25, DiskGB: 1, Managed: true},
+	"valkey":        {CPU: 1, RAMGB: 0.125, DiskGB: 1, Managed: true},
+	"clickhouse":    {CPU: 1, RAMGB: 0.375, DiskGB: 1, Managed: true}, // 0.25 fails: default min free RAM 0.375 exceeds max RAM.
+	"elasticsearch": {CPU: 1, RAMGB: 2, DiskGB: 2, Managed: true},     // 0.75 GB RAM fails with HTTP 500; single rejects horizontal scaling.
+	"kafka":         {CPU: 1, RAMGB: 0.5, DiskGB: 1, Managed: true},
+	"nats":          {CPU: 1, RAMGB: 0.25, DiskGB: 1, Managed: true},
+	"qdrant":        {CPU: 1, RAMGB: 0.25, DiskGB: 1, Managed: true},
+	"seaweedfs":     {CPU: 1, RAMGB: 0.5, DiskGB: 5, Managed: true},
+	"typesense":     {CPU: 1, RAMGB: 0.25, DiskGB: 1, Managed: true},
+	"meilisearch":   {CPU: 1, RAMGB: 0.25, DiskGB: 1, Managed: true},
+	"mysql":         {CPU: 1, RAMGB: 0.25, DiskGB: 1, Managed: true},
+	"local-storage": {CPU: 1, RAMGB: 0.125, DiskGB: 5, Managed: true},
+	"ubuntu/zbox":   {CPU: 2, RAMGB: 2, DiskGB: 10, Managed: true},
+}
+
+// MinimalServiceSize is shared by Terraform and direct-API fixtures.
+// PostgreSQL includes the provider's 2 GB disk floor for direct API callers;
+// Terraform managed tests omit disk to exercise that floor.
+func MinimalServiceSize(typ string) ServiceMinimum {
+	family, _, _ := strings.Cut(typ, "@")
+	family, mode, _ := strings.Cut(family, ":")
+	if minimum, ok := managedServiceMinimums[family]; ok {
+		if family == "postgresql" && mode == "ha" {
+			minimum.RAMGB = 1
+		}
+		if family == "elasticsearch" && mode == "ha" {
+			minimum.Containers = 3
+		}
+		return minimum
+	}
+	return ServiceMinimum{CPU: 1, RAMGB: 0.125, DiskGB: 1, Containers: 1}
+}
+
+// MinimalServiceMemoryGB preserves the existing runtime fixture helper.
+func MinimalServiceMemoryGB(typ string) float64 {
+	return MinimalServiceSize(typ).RAMGB
+}
+
+// MinimalServiceInput pins managed fixtures on both targets to catalogue minimums.
+// Development runtimes keep their original API defaults and scaling coverage.
 func MinimalServiceInput(input client.ServiceCreate) client.ServiceCreate {
-	if !IsProd() {
+	minimum := MinimalServiceSize(input.ServiceStackVersionName)
+	if !IsProd() && !minimum.Managed {
 		return input
 	}
-	one, memory, disk, cpuMode := 1, MinimalServiceMemoryGB(input.ServiceStackVersionName), 1.0, "SHARED"
-	// Direct API calls bypass the provider's PostgreSQL disk floor.
-	if input.ServiceStackVersionName == "postgresql:single@16" {
-		disk = 2.0
-	}
-	limits := &client.ScalingResource{CPUCoreCount: &one, MemoryGBytes: &memory, DiskGBytes: &disk}
+	cpu, memory, disk, cpuMode := minimum.CPU, minimum.RAMGB, minimum.DiskGB, "SHARED"
+	limits := &client.ScalingResource{CPUCoreCount: &cpu, MemoryGBytes: &memory, DiskGBytes: &disk}
 	input.CustomAutoscaling = &client.Autoscaling{
-		Vertical: &client.VerticalAutoscaling{MinResource: limits, MaxResource: limits, CPUMode: &cpuMode, StartCPUCoreCount: &one},
+		Vertical: &client.VerticalAutoscaling{MinResource: limits, MaxResource: limits, CPUMode: &cpuMode, StartCPUCoreCount: &cpu},
 	}
-	if !strings.Contains(input.ServiceStackVersionName, ":single@") {
-		input.CustomAutoscaling.Horizontal = &client.HorizontalAutoscaling{MinContainerCount: &one, MaxContainerCount: &one}
+	if minimum.Containers > 0 {
+		containers := minimum.Containers
+		input.CustomAutoscaling.Horizontal = &client.HorizontalAutoscaling{MinContainerCount: &containers, MaxContainerCount: &containers}
 	}
 	return input
 }

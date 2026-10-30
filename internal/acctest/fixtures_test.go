@@ -11,33 +11,87 @@ import (
 )
 
 func TestMinimalServiceInput(t *testing.T) {
-	for typ, memory := range map[string]float64{"alpine/nodejs@22": 0.125, "valkey:single@7.2": 0.125, "postgresql:single@16": 0.25} {
-		t.Run(typ, func(t *testing.T) {
-			t.Setenv("ZEROPS_TARGET", "dev")
-			input := client.ServiceCreate{Name: "fixture", ServiceStackVersionName: typ}
-			if got := MinimalServiceInput(input); got.CustomAutoscaling != nil {
-				t.Fatal("dev scaling defaults changed")
+	cases := []struct {
+		typ        string
+		cpu        int
+		memory     float64
+		disk       float64
+		containers int
+		managed    bool
+	}{
+		{"alpine/nodejs@22", 1, 0.125, 1, 1, false},
+		{"nodejs@22", 1, 0.125, 1, 1, false},
+		{"ubuntu@24.04", 1, 0.125, 1, 1, false},
+		{"postgresql:single@16", 1, 0.25, 2, 0, true},
+		{"postgresql:ha@16", 1, 1, 2, 0, true},
+		{"mariadb:single@10.6", 1, 0.25, 1, 0, true},
+		{"valkey:single@7.2", 1, 0.125, 1, 0, true},
+		{"clickhouse:single@25.3", 1, 0.375, 1, 0, true},
+		{"elasticsearch:single@9.2", 1, 2, 2, 0, true},
+		{"elasticsearch:ha@9.2", 1, 2, 2, 3, true},
+		{"kafka:single@3.9", 1, 0.5, 1, 0, true},
+		{"nats:single@2.12", 1, 0.25, 1, 0, true},
+		{"qdrant:single@1.12", 1, 0.25, 1, 0, true},
+		{"seaweedfs:single@3.85", 1, 0.5, 5, 0, true},
+		{"typesense:single@30.2", 1, 0.25, 1, 0, true},
+		{"meilisearch:single@1.44", 1, 0.25, 1, 0, true},
+		{"mysql:ha@5.7", 1, 0.25, 1, 0, true},
+		{"local-storage:single@1", 1, 0.125, 5, 0, true},
+		{"ubuntu/zbox@1", 2, 2, 10, 0, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.typ, func(t *testing.T) {
+			want := ServiceMinimum{CPU: tc.cpu, RAMGB: tc.memory, DiskGB: tc.disk, Containers: tc.containers, Managed: tc.managed}
+			if got := MinimalServiceSize(tc.typ); got != want {
+				t.Fatalf("minimum = %+v; want %+v", got, want)
 			}
-			t.Setenv("ZEROPS_TARGET", "prod")
-			got := MinimalServiceInput(input)
-			scaling := got.CustomAutoscaling
-			if got.Name != input.Name || got.ServiceStackVersionName != typ || scaling == nil || scaling.Vertical == nil {
-				t.Fatal("production fixture identity or scaling missing")
+			if got := MinimalServiceMemoryGB(tc.typ); got != tc.memory {
+				t.Fatalf("memory = %g; want %g", got, tc.memory)
 			}
-			disk := 1.0
-			if typ == "postgresql:single@16" {
-				disk = 2.0
-			}
-			v := scaling.Vertical
-			if *v.CPUMode != "SHARED" || *v.MinResource.CPUCoreCount != 1 || *v.MaxResource.CPUCoreCount != 1 || *v.MinResource.MemoryGBytes != memory || *v.MaxResource.MemoryGBytes != memory || *v.MinResource.DiskGBytes != disk || *v.MaxResource.DiskGBytes != disk || *v.StartCPUCoreCount != 1 {
-				t.Fatalf("production fixture must use CPU 1 / RAM %g GB / disk %g GB", memory, disk)
-			}
-			if typ == "alpine/nodejs@22" {
-				if scaling.Horizontal == nil || *scaling.Horizontal.MinContainerCount != 1 || *scaling.Horizontal.MaxContainerCount != 1 {
-					t.Fatal("runtime container count is not fixed at one")
-				}
-			} else if scaling.Horizontal != nil {
-				t.Fatal("single-node managed fixture must not set horizontal autoscaling")
+			for _, target := range []string{"dev", "prod"} {
+				t.Run(target, func(t *testing.T) {
+					t.Setenv("ZEROPS_TARGET", target)
+					input := client.ServiceCreate{Name: "fixture", ServiceStackVersionName: tc.typ}
+					got := MinimalServiceInput(input)
+					if got.Name != input.Name || got.ServiceStackVersionName != tc.typ {
+						t.Fatal("fixture identity changed")
+					}
+					if target == "dev" && !tc.managed {
+						if got.CustomAutoscaling != nil {
+							t.Fatal("dev runtime scaling defaults changed")
+						}
+						return
+					}
+					scaling := got.CustomAutoscaling
+					if scaling == nil || scaling.Vertical == nil {
+						t.Fatal("fixture scaling missing")
+					}
+					v := scaling.Vertical
+					if v.CPUMode == nil || v.MinResource == nil || v.MaxResource == nil || v.StartCPUCoreCount == nil {
+						t.Fatal("vertical scaling bounds missing")
+					}
+					for _, bounds := range []*client.ScalingResource{v.MinResource, v.MaxResource} {
+						if bounds.CPUCoreCount == nil || bounds.MemoryGBytes == nil || bounds.DiskGBytes == nil {
+							t.Fatal("vertical resource limits missing")
+						}
+						if *bounds.CPUCoreCount != tc.cpu || *bounds.MemoryGBytes != tc.memory || *bounds.DiskGBytes != tc.disk {
+							t.Fatalf("fixture must use CPU %d / RAM %g GB / disk %g GB", tc.cpu, tc.memory, tc.disk)
+						}
+					}
+					if *v.CPUMode != "SHARED" || *v.StartCPUCoreCount != tc.cpu {
+						t.Fatal("fixture must start at its shared CPU minimum")
+					}
+					if tc.containers == 0 {
+						if scaling.Horizontal != nil {
+							t.Fatal("managed fixture must omit horizontal autoscaling")
+						}
+					} else {
+						h := scaling.Horizontal
+						if h == nil || h.MinContainerCount == nil || h.MaxContainerCount == nil || *h.MinContainerCount != tc.containers || *h.MaxContainerCount != tc.containers {
+							t.Fatalf("fixture container count must be fixed at %d", tc.containers)
+						}
+					}
+				})
 			}
 		})
 	}

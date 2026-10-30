@@ -10,12 +10,14 @@ import (
 
 // ProviderData is shared by all resource and data source instances of a provider.
 type ProviderData struct {
-	API                 client.API
-	Locks               *locks.Keyed
-	OrganizationID      string
-	Endpoint            string
-	RoutingForceSync    bool
-	PostgresqlMinDiskGB float64
+	API                   client.API
+	Locks                 *locks.Keyed
+	OrganizationID        string
+	Endpoint              string
+	RoutingForceSync      bool
+	PostgresqlMinDiskGB   float64
+	ClickhouseMinRAMGB    float64
+	ElasticsearchMinRAMGB float64
 }
 
 // FromResourceConfigure accepts unconfigured providers and diagnoses incompatible payloads.

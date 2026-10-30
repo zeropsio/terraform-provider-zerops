@@ -26,3 +26,12 @@ resource "zerops_service" "app" {
 
 # Deploying later starts the service. If desired_state is STOPPED, the next
 # service apply stops it again; do not depend on graph ordering to stop a deploy.
+
+# Managed services offering both single-node and highly available modes need an
+# explicit mode: "postgresql:single@16" or "postgresql:ha@16". The shorthand
+# "postgresql@16" is rejected during planning.
+resource "zerops_service" "db" {
+  project_id = zerops_project.example.id
+  hostname   = "db"
+  type       = "postgresql:single@16"
+}

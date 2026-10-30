@@ -93,7 +93,7 @@ func (p *zeropsProvider) DataSources(context.Context) []func() datasource.DataSo
 	return p.registry.DataSources
 }
 func (p *zeropsProvider) Schema(_ context.Context, _ framework.SchemaRequest, resp *framework.SchemaResponse) {
-	resp.Schema = schema.Schema{Description: "Manage Zerops projects and services. Sensitive values are retained in Terraform state; protect your state files.", Attributes: map[string]schema.Attribute{
+	resp.Schema = schema.Schema{Description: "Manage Zerops projects and services. Sensitive values are retained in Terraform state; protect your state files. Managed service floors default to 2 GB PostgreSQL disk (postgresql_min_disk_gb / ZEROPS_POSTGRESQL_MIN_DISK_GB), 0.375 GB ClickHouse RAM (ZEROPS_CLICKHOUSE_MIN_RAM_GB), and 2 GB Elasticsearch RAM (ZEROPS_ELASTICSEARCH_MIN_RAM_GB). RAM floor environment overrides must be finite positive numbers with at most three decimal places.", Attributes: map[string]schema.Attribute{
 		"endpoint":               schema.StringAttribute{Optional: true, Description: "HTTPS API origin. Defaults to ZEROPS_ENDPOINT, then the production Prague API.", Validators: []validator.String{endpointValidator{}}},
 		"token":                  schema.StringAttribute{Optional: true, Sensitive: true, Description: "Integration token. Defaults to ZEROPS_TOKEN. No sudo escalation is performed."},
 		"organization_id":        schema.StringAttribute{Optional: true, Description: "Organization client ID. Defaults to ZEROPS_ORGANIZATION_ID; otherwise exactly one membership is required."},
@@ -202,6 +202,8 @@ func (p *zeropsProvider) Configure(ctx context.Context, req framework.ConfigureR
 	if precision.Diagnostics.HasError() {
 		resp.Diagnostics.AddAttributeError(path.Root("postgresql_min_disk_gb"), "Invalid PostgreSQL disk floor precision", "postgresql_min_disk_gb / ZEROPS_POSTGRESQL_MIN_DISK_GB must have at most three decimal places.")
 	}
+	clickhouseRAMFloor := managedRAMFloor(ctx, "ZEROPS_CLICKHOUSE_MIN_RAM_GB", 0.375, resp)
+	elasticsearchRAMFloor := managedRAMFloor(ctx, "ZEROPS_ELASTICSEARCH_MIN_RAM_GB", 2, resp)
 	transport := p.transport
 	switch os.Getenv("ZEROPS_SANDBOX") {
 	case "":
@@ -258,7 +260,7 @@ func (p *zeropsProvider) Configure(ctx context.Context, req framework.ConfigureR
 			return
 		}
 	}
-	data := &providerdata.ProviderData{API: api, Locks: &locks.Keyed{}, OrganizationID: organization, Endpoint: endpoint, RoutingForceSync: force, PostgresqlMinDiskGB: diskFloor}
+	data := &providerdata.ProviderData{API: api, Locks: &locks.Keyed{}, OrganizationID: organization, Endpoint: endpoint, RoutingForceSync: force, PostgresqlMinDiskGB: diskFloor, ClickhouseMinRAMGB: clickhouseRAMFloor, ElasticsearchMinRAMGB: elasticsearchRAMFloor}
 	resp.ResourceData, resp.DataSourceData = data, data
 }
 

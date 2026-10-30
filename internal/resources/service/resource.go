@@ -52,11 +52,11 @@ func (r *Resource) Configure(_ context.Context, q resource.ConfigureRequest, p *
 }
 func (r *Resource) Schema(ctx context.Context, _ resource.SchemaRequest, p *resource.SchemaResponse) {
 	replace := []planmodifier.String{stringplanmodifier.RequiresReplace()}
-	p.Schema = schema.Schema{MarkdownDescription: "A runtime or managed Zerops service. Deployments and generated subdomain access are separate resources. Lifecycle is unmanaged unless desired_state is configured. PostgreSQL disk settings default to and must meet the provider postgresql_min_disk_gb floor (2 GB by default).", Attributes: map[string]schema.Attribute{
+	p.Schema = schema.Schema{MarkdownDescription: "A runtime or managed Zerops service. Deployments and generated subdomain access are separate resources. Lifecycle is unmanaged unless desired_state is configured. Managed scaling defaults to and must meet provider floors: PostgreSQL disk 2 GB (postgresql_min_disk_gb), ClickHouse RAM 0.375 GB (ZEROPS_CLICKHOUSE_MIN_RAM_GB), and Elasticsearch RAM 2 GB (ZEROPS_ELASTICSEARCH_MIN_RAM_GB).", Attributes: map[string]schema.Attribute{
 		"id":                   schema.StringAttribute{Computed: true, MarkdownDescription: "Service stack ID.", PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 		"project_id":           schema.StringAttribute{Required: true, MarkdownDescription: "Parent project ID.", Validators: []validator.String{stringvalidator.LengthAtLeast(1)}, PlanModifiers: replace},
 		"hostname":             schema.StringAttribute{Required: true, MarkdownDescription: "Service hostname (1–40 lowercase alphanumeric characters).", Validators: []validator.String{v.Hostname()}, PlanModifiers: replace},
-		"type":                 schema.StringAttribute{Required: true, MarkdownDescription: "Service type, preserving configured shorthand; base contains the canonical server spelling.", Validators: []validator.String{v.ServiceType()}, PlanModifiers: replace},
+		"type":                 schema.StringAttribute{Required: true, MarkdownDescription: "Service type; base contains the canonical server spelling. Dual-mode managed types require explicit :single@ or :ha@ (for example postgresql:single@16); unqualified shorthand is rejected.", Validators: []validator.String{v.ServiceType()}, PlanModifiers: []planmodifier.String{serviceTypeRequiresReplace()}},
 		"start_without_code":   schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false), MarkdownDescription: "Create-only runtime startup hint. Changing it does not deploy or start an existing service."},
 		"env_isolation":        schema.StringAttribute{Optional: true, MarkdownDescription: "Create-only environment isolation tokens; the server validates supported modes.", Validators: []validator.String{v.Isolation(false)}, PlanModifiers: replace},
 		"ssh_isolation":        schema.StringAttribute{Optional: true, MarkdownDescription: "Create-only SSH isolation tokens; the server validates supported modes.", Validators: []validator.String{v.Isolation(true)}, PlanModifiers: replace},
@@ -240,6 +240,13 @@ func (r *Resource) Update(ctx context.Context, q resource.UpdateRequest, p *reso
 	p.Diagnostics.Append(q.Plan.Get(ctx, &m)...)
 	p.Diagnostics.Append(q.State.Get(ctx, &old)...)
 	if p.Diagnostics.HasError() {
+		return
+	}
+	// Qualifying an existing shorthand changes state only. Concurrent scaling or
+	// lifecycle changes still follow the normal update path.
+	if canonicalTypeMigration(old.Type, m.Type, old.Base) && m.Vertical.Equal(old.Vertical) && m.Horizontal.Equal(old.Horizontal) && m.Desired.Equal(old.Desired) && m.Start.Equal(old.Start) {
+		m.ID, m.Base, m.Status, m.Created, m.Current = old.ID, old.Base, old.Status, old.Created, old.Current
+		p.Diagnostics.Append(p.State.Set(ctx, &m)...)
 		return
 	}
 	duration, d := m.Timeouts.Update(ctx, 20*time.Minute)

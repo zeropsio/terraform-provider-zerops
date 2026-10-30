@@ -63,9 +63,15 @@ resource "zerops_service" "app" {
   start_without_code = true
   desired_state      = "RUNNING"
 }
+
+resource "zerops_service" "db" {
+  project_id = zerops_project.example.id
+  hostname   = "db"
+  type       = "postgresql:single@16"
+}
 ```
 
-This creates a project and a service ready for a later deployment; it does not deploy application code. See [examples](examples/) for deployment and configuration examples.
+This creates a project, a service ready for a later deployment, and a single-node PostgreSQL database; it does not deploy application code. See [examples](examples/) for deployment and configuration examples.
 
 ## Resources and data sources
 
@@ -107,7 +113,8 @@ Full schemas and import instructions are available in the [Registry documentatio
 
 ## Known limitations
 
-- PostgreSQL defaults to a 2 GB disk floor, enforced during planning because the platform currently fails to provision PostgreSQL below it (generic HTTP 500 error). Configure the floor with `postgresql_min_disk_gb` / `ZEROPS_POSTGRESQL_MIN_DISK_GB` when the catalog changes.
+- Managed types that offer both single-node and highly available modes (for example PostgreSQL, MariaDB, Valkey, ClickHouse, Elasticsearch, Kafka, NATS, Qdrant, SeaweedFS and Typesense) need an explicit mode in `type`, such as `postgresql:single@16` or `postgresql:ha@16`. The shorthand `postgresql@16` creates an HA service on Zerops, so the provider rejects it during planning (from v0.1.2), for `zerops_service` and for service entries in `zerops_project_import` YAML that lack a `mode`. The set of such families is read from the live catalog; if the catalog cannot be read, a built-in snapshot of the families above is used. Services created with the shorthand by earlier provider versions can switch `type` to the qualified value shown in their `base` attribute without replacement.
+- PostgreSQL defaults to a 2 GB disk floor, enforced during planning because the platform currently fails to provision PostgreSQL below it (generic HTTP 500 error). Configure the floor with `postgresql_min_disk_gb` / `ZEROPS_POSTGRESQL_MIN_DISK_GB` when the catalog changes. In the same way, ClickHouse RAM defaults to and must be at least 0.375 GB (`ZEROPS_CLICKHOUSE_MIN_RAM_GB`), because smaller sizes fail server validation, and Elasticsearch RAM defaults to and must be at least 2 GB (`ZEROPS_ELASTICSEARCH_MIN_RAM_GB`), because smaller sizes fail with HTTP 500. These floors apply to both modes and are checked against both `min_ram_gb` and `max_ram_gb`.
 - Project credit limits cannot be read back reliably; changing or removing a configured limit can prevent later project updates.
 - Avoid reserved service hostnames such as `core` and `l7httpbalancer`; they may interfere with project operation and deletion.
 - The API's server-side Git builds may ignore tag or commit references and reject private repositories. Consult the deployment resource documentation for provider-side Git deployment options.

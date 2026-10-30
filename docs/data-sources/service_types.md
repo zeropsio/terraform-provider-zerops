@@ -3,12 +3,12 @@
 page_title: "zerops_service_types Data Source - Zerops"
 subcategory: ""
 description: |-
-  Reads the organization service type catalog.
+  Reads the organization service type catalog. Managed versions use qualified family:mode@version names; zerops_service requires this form for dual-mode managed types.
 ---
 
 # zerops_service_types (Data Source)
 
-Reads the organization service type catalog.
+Reads the organization service type catalog. Managed versions use qualified family:mode@version names; zerops_service requires this form for dual-mode managed types.
 
 ## Example Usage
 
