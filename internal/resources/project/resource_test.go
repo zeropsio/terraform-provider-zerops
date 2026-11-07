@@ -3,6 +3,7 @@ package project
 import (
 	"context"
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -90,11 +91,15 @@ func TestAccProjectLifecycle(t *testing.T) {
 		mode = "LIGHT"
 		t.Log("production gentleness: keep applied project mode LIGHT; skip SERIOUS-to-LIGHT replacement plan because it requires a prior SERIOUS apply")
 	}
+	sharedIPv4 := "true"
+	if os.Getenv("ZEROPS_CI_ORGANIZATION_ID") != "" {
+		sharedIPv4 = "false"
+	}
 	steps := []resource.TestStep{
 		{Config: projectConfig(name, ""), Check: check("")},
-		{Config: projectConfig(name+"-renamed", `description = "first"
+		{Config: projectConfig(name+"-renamed", fmt.Sprintf(`description = "first"
  tags = ["alpha", "beta"]
- public_ipv4_shared = true`)},
+ public_ipv4_shared = %s`, sharedIPv4))},
 		{Config: projectConfig(name, `description = "second"
  tags = ["beta"]
  max_credit_limit = "25"`), Check: check("25")},

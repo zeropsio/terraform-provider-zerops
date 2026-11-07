@@ -1,0 +1,123 @@
+name: Production live acceptance
+
+on:
+  schedule:
+    - cron: '23 4 * * 1'
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      sha: ${{ steps.verify.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify repository, ref and main ancestry
+        id: verify
+        env:
+          REPOSITORY: ${{ github.repository }}
+          REF: ${{ github.ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$REPOSITORY" == zeropsio/terraform-provider-zerops ]] || { echo 'Unexpected repository' >&2; exit 1; }
+          case "$REF" in
+            refs/heads/main|refs/tags/v*) ;;
+            *) echo 'Only main or v* tags may run live acceptance' >&2; exit 1 ;;
+          esac
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          sha="$(git rev-parse HEAD)"
+          git merge-base --is-ancestor "$sha" origin/main || { echo 'Selected commit is not on origin/main' >&2; exit 1; }
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+  live:
+    needs: verify
+    runs-on: [self-hosted, Linux, X64, zerops-prod]
+    environment: prod-live
+    concurrency:
+      group: prod-live
+      cancel-in-progress: false
+    timeout-minutes: 360
+    env:
+      ZEROPS_TARGET: prod
+      ZEROPS_ENDPOINT: ${{ secrets.ZEROPS_ENDPOINT }}
+      ZEROPS_TOKEN: ${{ secrets.ZEROPS_TOKEN }}
+      ZEROPS_ORGANIZATION_ID: ${{ secrets.ZEROPS_ORGANIZATION_ID }}
+      ZEROPS_CI_ORGANIZATION_ID: ${{ secrets.ZEROPS_ORGANIZATION_ID }}
+      ZEROPS_POSTGRESQL_MIN_DISK_GB: '2'
+      ZEROPS_ACC_ENV_FILE: ''
+    steps:
+      - name: Require secrets and initialize production ledger
+        shell: bash
+        run: |
+          set -euo pipefail
+          for key in ZEROPS_ENDPOINT ZEROPS_TOKEN ZEROPS_ORGANIZATION_ID; do
+            value="${!key}"
+            [[ -n "${value//[[:space:]]/}" ]] || { echo "prod-live environment secret $key is required" >&2; exit 1; }
+          done
+          [[ "$RUNNER_TEMP" == /* ]] || { echo 'RUNNER_TEMP must be absolute' >&2; exit 1; }
+          printf 'ZEROPS_PROD_LEDGER=%s/terraform-prod-%s-%s.ledger\n' "$RUNNER_TEMP" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.verify.outputs.sha }}
+          persist-credentials: false
+          clean: true
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: '1.15.9'
+          terraform_wrapper: false
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_version: '1.12.1'
+          tofu_wrapper: false
+      - name: Build and initialize production guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          go build -o bin/zguard ./tools/zguard
+          source tools/target-guard.sh
+          zerops_target_precheck
+      - name: Run exact production-small subset on Terraform then OpenTofu
+        timeout-minutes: 180
+        shell: bash
+        run: |
+          set -euo pipefail
+          source tools/target-guard.sh
+          zerops_target_precheck
+          zerops_production_run_lock
+          export TF_ACC=1
+          for cli in terraform tofu; do
+            export TF_ACC_TERRAFORM_PATH="$(command -v "$cli")"
+            go test -count=1 -p 1 -parallel 1 ./internal/resources/project -run '^TestAccProjectLifecycle$' -timeout 90m
+            go test -count=1 -p 1 -parallel 1 ./internal/resources/service -run '^TestAccServiceManaged$/^valkey$' -timeout 90m
+            go test -count=1 -p 1 -parallel 1 ./internal/resources/service_deploy -run '^TestAccServiceDeployDirectory$' -timeout 90m
+          done
+      - name: Sweep CI projects and fail on leftovers
+        timeout-minutes: 120
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for key in ZEROPS_ENDPOINT ZEROPS_TOKEN ZEROPS_ORGANIZATION_ID; do
+            value="${!key}"
+            [[ -n "${value//[[:space:]]/}" ]] || { echo "prod-live environment secret $key is required for cleanup" >&2; exit 1; }
+          done
+          go build -o bin/zguard ./tools/zguard
+          source tools/target-guard.sh
+          zerops_target_precheck
+          zerops_production_run_lock
+          go test -count=1 ./internal/sweep -sweep=prod -sweep-run=zerops_project -timeout 120m

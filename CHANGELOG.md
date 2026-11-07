@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Add protected production-small live acceptance CI for Terraform and OpenTofu, with verified main ancestry, serial execution, dedicated-organization cleanup, and leftover detection.
+
 ## 0.1.2
 
 2026-10-30

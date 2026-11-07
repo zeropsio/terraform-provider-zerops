@@ -19,7 +19,8 @@ func init() {
 }
 
 // SweepProjects deletes prefixed projects in the configured organization.
-// Production additionally requires that each project was recorded in the ledger.
+// Production requires ledger ownership and retains dedicated-IPv4 holders.
+// CI further limits selection to tfacc- projects in its pinned organization.
 // The region argument is the plugin-testing sweep label, not an API endpoint.
 func SweepProjects(region string) error {
 	cfg, org, err := acctest.Environment()
@@ -48,6 +49,13 @@ func SweepProjects(region string) error {
 		}
 		for _, project := range page.Items {
 			if selectProject(project, org, acctest.IsProd(), ledger) {
+				if acctest.IsProd() && os.Getenv("ZEROPS_CI_ORGANIZATION_ID") != "" {
+					// Adopt only IDs inventoried in the pinned CI organization.
+					// Deletion still passes the normal ledger and API ownership guard.
+					if err := client.RecordProject(os.Getenv("ZEROPS_PROD_LEDGER"), project.ID, project.Name, "acctest"); err != nil {
+						return err
+					}
+				}
 				ids = append(ids, project.ID)
 			}
 		}
@@ -61,12 +69,36 @@ func SweepProjects(region string) error {
 			return fmt.Errorf("sweep project %s: %w", id, err)
 		}
 	}
+	if acctest.IsProd() && os.Getenv("ZEROPS_CI_ORGANIZATION_ID") != "" {
+		for offset := 0; ; {
+			page, err := c.ListProjects(ctx, org, client.ProjectQuery{PageQuery: client.PageQuery{Offset: offset, Limit: 100}, NameContains: "tfacc-"})
+			if err != nil {
+				return err
+			}
+			for _, project := range page.Items {
+				if project.ClientID == org && strings.HasPrefix(project.Name, "tfacc-") {
+					return fmt.Errorf("CI project remains after sweep: %s", project.ID)
+				}
+			}
+			if len(page.Items) == 0 || offset+len(page.Items) >= page.Total {
+				break
+			}
+			offset += len(page.Items)
+		}
+	}
 	return nil
 }
 
 // selectProject receives only rows from the pinned organization's listing.
 // In production, require its explicit client ID as a second fail-closed check.
 func selectProject(project client.Project, org string, prod bool, ledger client.Ledger) bool {
+	if pin := os.Getenv("ZEROPS_CI_ORGANIZATION_ID"); pin != "" {
+		if !prod || pin != org || !strings.HasPrefix(project.Name, "tfacc-") {
+			return false
+		}
+		_, holder := ledger.IPv4Projects[project.ID]
+		return !holder && project.ClientID == org && project.ID != ""
+	}
 	if !strings.HasPrefix(project.Name, "tfacc-") && !strings.HasPrefix(project.Name, "tfprobe-") {
 		return false
 	}

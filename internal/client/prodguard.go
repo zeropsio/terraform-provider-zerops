@@ -209,6 +209,9 @@ func NewProdTransport(ctx context.Context, cfg Config, requestedOrg, ledgerPath,
 	if strings.TrimSpace(requestedOrg) == "" {
 		return nil, errors.New("ZEROPS_ORGANIZATION_ID is required for production")
 	}
+	if pin := os.Getenv("ZEROPS_CI_ORGANIZATION_ID"); pin != "" && pin != requestedOrg {
+		return nil, errors.New("production organization does not match ZEROPS_CI_ORGANIZATION_ID")
+	}
 	if _, err := ReadLedger(ledgerPath); err != nil {
 		return nil, err
 	}

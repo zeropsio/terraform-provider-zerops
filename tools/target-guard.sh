@@ -37,6 +37,9 @@ zerops_target_precheck() {
       export ZEROPS_SANDBOX=dev
       ;;
     prod)
+      if [[ -n "${GITHUB_ACTIONS:-}" && ( -z "${ZEROPS_CI_ORGANIZATION_ID:-}" || "${ZEROPS_CI_ORGANIZATION_ID}" != "$org" ) ]]; then
+        echo 'CI requires ZEROPS_CI_ORGANIZATION_ID to match ZEROPS_ORGANIZATION_ID' >&2; return 1
+      fi
       if [[ "${ZEROPS_ENDPOINT:-}" != https://api.app-prg1.zerops.io ]]; then
         echo 'Production requires ZEROPS_ENDPOINT=https://api.app-prg1.zerops.io' >&2; return 1
       fi

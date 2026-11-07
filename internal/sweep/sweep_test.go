@@ -59,3 +59,26 @@ func TestSelectProject(t *testing.T) {
 		t.Fatalf("missing holder skip log: %s", logs.String())
 	}
 }
+
+func TestSelectCIProject(t *testing.T) {
+	t.Setenv("ZEROPS_CI_ORGANIZATION_ID", "ci-org")
+	for _, tc := range []struct {
+		name, org, id string
+		want          bool
+	}{
+		{"tfacc-run", "ci-org", "unrecorded", true},
+		{"tfacc-old", "ci-org", "old-ledger-entry", true},
+		{"tfprobe-old", "ci-org", "old-ledger-entry", false},
+		{"customer-tfacc-run", "ci-org", "id", false},
+		{"tfacc-run", "other-org", "id", false},
+		{"tfacc-run", "ci-org", "", false},
+	} {
+		project := client.Project{Name: tc.name, ClientID: tc.org, ID: tc.id}
+		if got := selectProject(project, "ci-org", true, client.Ledger{}); got != tc.want {
+			t.Errorf("%+v: selected=%v", tc, got)
+		}
+		if selectProject(project, "other-org", true, client.Ledger{}) {
+			t.Error("accepted mismatched organization pin")
+		}
+	}
+}
