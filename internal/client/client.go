@@ -73,9 +73,12 @@ func safeCode(s string) string {
 	return s
 }
 func AsAPIError(err error) (*APIError, bool) { var e *APIError; ok := errors.As(err, &e); return e, ok }
+
+// IsNotFound matches only the given codes, because a route-level 404 does not prove that the entity is gone.
+// Zerops answers a missing entity with HTTP 400 and is moving these codes to 404, so both statuses count.
 func IsNotFound(err error, codes ...string) bool {
 	e, ok := AsAPIError(err)
-	if !ok || e.HTTPStatus != 400 {
+	if !ok || (e.HTTPStatus != 400 && e.HTTPStatus != 404) {
 		return false
 	}
 	for _, code := range codes {

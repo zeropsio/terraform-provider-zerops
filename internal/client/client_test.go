@@ -46,8 +46,14 @@ func TestErrorChannelsAndNotFound(t *testing.T) {
 	if !IsNotFound(wrapped, "projectNotFound") || IsNotFound(wrapped, "NotFound") || IsNotFound(wrapped) {
 		t.Fatal("not-found must require exact supplied code")
 	}
-	if IsNotFound(&APIError{HTTPStatus: 404, Code: "projectNotFound"}, "projectNotFound") {
-		t.Fatal("HTTP classifier accepted 404")
+	if !IsNotFound(&APIError{HTTPStatus: 404, Code: "projectNotFound"}, "projectNotFound") {
+		t.Fatal("HTTP classifier rejected 404 with the code")
+	}
+	if IsNotFound(&APIError{HTTPStatus: 404, Code: "notFound"}, "projectNotFound") {
+		t.Fatal("HTTP classifier accepted a route-level 404")
+	}
+	if IsNotFound(&APIError{HTTPStatus: 403, Code: "projectNotFound"}, "projectNotFound") {
+		t.Fatal("HTTP classifier accepted 403")
 	}
 	converted := normalizeError(fmt.Errorf("wrapped: %w", apiError.Error{HttpStatusCode: 403, ErrorCode: "notInSudoMode"}))
 	if e, ok := AsAPIError(converted); !ok || e.HTTPStatus != 403 {

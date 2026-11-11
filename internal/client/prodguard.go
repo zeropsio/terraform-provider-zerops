@@ -305,7 +305,7 @@ func (g *ProdTransport) RecordIPv4Release(ctx context.Context, id string) error 
 	var p Project
 	if err := g.get(ctx, "/project/"+id, &p); err != nil {
 		var statusErr *ownershipHTTPError
-		if !errors.As(err, &statusErr) || statusErr.status != http.StatusBadRequest || statusErr.code != "projectNotFound" {
+		if !errors.As(err, &statusErr) || !statusErr.projectNotFound() {
 			return err
 		}
 	} else if p.ClientID != g.OrgID || (p.PublicIPv4 != nil && *p.PublicIPv4 != "") {
@@ -316,6 +316,11 @@ func (g *ProdTransport) RecordIPv4Release(ctx context.Context, id string) error 
 		source = "provider"
 	}
 	return appendRecord(f, "note", id, "ipv4-released", source)
+}
+
+// projectNotFound reports the answer for a deleted project, which Zerops is moving from HTTP 400 to 404.
+func (e *ownershipHTTPError) projectNotFound() bool {
+	return (e.status == http.StatusBadRequest || e.status == http.StatusNotFound) && e.code == "projectNotFound"
 }
 
 func (g *ProdTransport) get(ctx context.Context, path string, out any) error {

@@ -77,7 +77,7 @@ for cli in /usr/bin/terraform /usr/bin/tofu; do
           # Keep the bearer in stdin, not process arguments; redirects stay disabled.
           code="$(printf 'header = "Authorization: Bearer %s"\n' "$ZEROPS_TOKEN" | curl --config - --silent --show-error --max-time 60 --proto '=https' -o "$work/deleted-project.json" -w '%{http_code}' "${ZEROPS_ENDPOINT%/}/api/rest/public/project/$project_id")" || exit 1
         fi
-        if [[ "$code" != 400 ]] || ! jq -e '.error.code == "projectNotFound"' "$work/deleted-project.json" >/dev/null; then
+        if [[ "$code" != 400 && "$code" != 404 ]] || ! jq -e '.error.code == "projectNotFound"' "$work/deleted-project.json" >/dev/null; then
           echo "Project absence not confirmed for $project_id" >&2; exit 1
         fi
       fi

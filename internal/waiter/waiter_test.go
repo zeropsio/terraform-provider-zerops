@@ -238,6 +238,10 @@ func TestProjectAndDelete(t *testing.T) {
 	if err != nil || calls != 3 {
 		t.Fatalf("%v calls %d", err, calls)
 	}
+	err = WaitNotFound(context.Background(), "p", func(context.Context) error { return &client.APIError{HTTPStatus: 404, Code: "projectNotFound"} }, []string{"projectNotFound"}, WithClock(c))
+	if err != nil {
+		t.Fatalf("absence at 404 rejected: %v", err)
+	}
 	err = WaitNotFound(context.Background(), "p", func(context.Context) error { return &client.APIError{HTTPStatus: 400, Code: "processNotFound"} }, []string{"projectNotFound"}, WithClock(c))
 	if err == nil {
 		t.Fatal("wrong absence accepted")

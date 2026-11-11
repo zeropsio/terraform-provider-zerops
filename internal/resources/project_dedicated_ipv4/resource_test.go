@@ -106,12 +106,20 @@ func TestReadImportDelete(t *testing.T) {
 	create := resource.CreateResponse{State: state}
 	r.Create(ctx, resource.CreateRequest{Plan: plan}, &create)
 	state = create.State
-	for _, err := range []error{&client.APIError{HTTPStatus: 401, Code: "notAuthorized"}, &client.APIError{HTTPStatus: 404, Code: "projectNotFound"}} {
+	for _, err := range []error{&client.APIError{HTTPStatus: 401, Code: "notAuthorized"}, &client.APIError{HTTPStatus: 403, Code: "projectNotFound"}, &client.APIError{HTTPStatus: 404, Code: "notFound"}} {
 		api.readErr = err
 		resp := resource.ReadResponse{State: state}
 		r.Read(ctx, resource.ReadRequest{State: state}, &resp)
 		if !resp.Diagnostics.HasError() || resp.State.Raw.IsNull() {
 			t.Fatal("nonabsence removed state")
+		}
+	}
+	for _, status := range []int{400, 404} {
+		api.readErr = &client.APIError{HTTPStatus: status, Code: "projectNotFound"}
+		resp := resource.ReadResponse{State: state}
+		r.Read(ctx, resource.ReadRequest{State: state}, &resp)
+		if resp.Diagnostics.HasError() || !resp.State.Raw.IsNull() {
+			t.Fatal("absence kept state", status)
 		}
 	}
 	api.readErr = nil
