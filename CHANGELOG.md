@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.1.3
+
+2026-11-12
 
 - Treat HTTP 404 with an entity's not-found code (for example `projectNotFound`) as a deleted resource, like HTTP 400. Zerops is moving these answers from 400 to 404, and refresh and destroy would otherwise fail.
 - Add protected production-small live acceptance CI for Terraform and OpenTofu, with verified main ancestry, serial execution, dedicated-organization cleanup, and leftover detection.
