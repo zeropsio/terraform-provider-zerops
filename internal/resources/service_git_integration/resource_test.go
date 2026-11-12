@@ -89,7 +89,8 @@ func TestDeleteExactParentPresence(t *testing.T) {
 	}{
 		{name: "present without OAuth read gate", resets: 1, readbacks: 1},
 		{name: "absent", getErr: &client.APIError{HTTPStatus: 400, Code: "serviceStackNotFound"}},
-		{name: "wrong status", getErr: &client.APIError{HTTPStatus: 404, Code: "serviceStackNotFound"}, fail: true},
+		{name: "absent at 404", getErr: &client.APIError{HTTPStatus: 404, Code: "serviceStackNotFound"}},
+		{name: "wrong status", getErr: &client.APIError{HTTPStatus: 403, Code: "serviceStackNotFound"}, fail: true},
 		{name: "permission denied", getErr: &client.APIError{HTTPStatus: 400, Code: "insufficientPermissions"}, fail: true},
 		{name: "capability denied", getErr: &client.APIError{HTTPStatus: 400, Code: "githubAuthorizationRequired"}, fail: true},
 		{name: "transport failed", getErr: errors.New("transport failed"), fail: true},

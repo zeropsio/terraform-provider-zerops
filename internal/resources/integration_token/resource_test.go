@@ -92,7 +92,7 @@ func TestReadRetainsSecretAndExactAbsence(t *testing.T) {
 	for _, tc := range []struct {
 		err          error
 		absent, fail bool
-	}{{nil, false, false}, {&client.APIError{HTTPStatus: 400, Code: "clientUserConnectionNotFound"}, true, false}, {&client.APIError{HTTPStatus: 404, Code: "clientUserConnectionNotFound"}, false, true}, {&client.APIError{HTTPStatus: 400, Code: "insufficientPermissions"}, false, true}} {
+	}{{nil, false, false}, {&client.APIError{HTTPStatus: 400, Code: "clientUserConnectionNotFound"}, true, false}, {&client.APIError{HTTPStatus: 404, Code: "clientUserConnectionNotFound"}, true, false}, {&client.APIError{HTTPStatus: 403, Code: "clientUserConnectionNotFound"}, false, true}, {&client.APIError{HTTPStatus: 400, Code: "insufficientPermissions"}, false, true}} {
 		r, a, _, state := fixture(t)
 		a.getErr = tc.err
 		p := resource.ReadResponse{State: state}
@@ -256,7 +256,8 @@ func TestDeleteExactPresence(t *testing.T) {
 	}{
 		{name: "present", deletes: 1, gets: 2},
 		{name: "absent", getErr: &client.APIError{HTTPStatus: 400, Code: "clientUserConnectionNotFound"}, gets: 1},
-		{name: "wrong status", getErr: &client.APIError{HTTPStatus: 404, Code: "clientUserConnectionNotFound"}, fail: true, gets: 1},
+		{name: "absent at 404", getErr: &client.APIError{HTTPStatus: 404, Code: "clientUserConnectionNotFound"}, gets: 1},
+		{name: "wrong status", getErr: &client.APIError{HTTPStatus: 403, Code: "clientUserConnectionNotFound"}, fail: true, gets: 1},
 		{name: "permission denied", getErr: &client.APIError{HTTPStatus: 400, Code: "insufficientPermissions"}, fail: true, gets: 1},
 		{name: "transport failed", getErr: errors.New("transport failed"), fail: true, gets: 1},
 		{name: "delete disappearance race", deleteErr: &client.APIError{HTTPStatus: 400, Code: "clientUserConnectionNotFound"}, deletes: 1, gets: 1},

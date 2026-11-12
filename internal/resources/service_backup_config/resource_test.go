@@ -106,14 +106,16 @@ func TestBackupFailureAndImport(t *testing.T) {
 	}
 }
 func TestBackupAbsenceClassification(t *testing.T) {
-	for _, e := range []error{&client.APIError{HTTPStatus: 404, Code: "serviceStackNotFound"}, &client.APIError{HTTPStatus: 403, Code: "forbidden"}, &client.APIError{HTTPStatus: 400, Code: "projectNotFound"}} {
+	for _, e := range []error{&client.APIError{HTTPStatus: 404, Code: "notFound"}, &client.APIError{HTTPStatus: 403, Code: "serviceStackNotFound"}, &client.APIError{HTTPStatus: 403, Code: "forbidden"}, &client.APIError{HTTPStatus: 400, Code: "projectNotFound"}} {
 		if absentDuringDelete(e, true) {
 			t.Fatal("non-absence removed state", e)
 		}
 	}
-	e := &client.APIError{HTTPStatus: 400, Code: "serviceStackNotFound"}
-	if !absentDuringDelete(e, true) || absentDuringDelete(e, false) {
-		t.Fatal("wrong endpoint absence handling")
+	for _, status := range []int{400, 404} {
+		e := &client.APIError{HTTPStatus: status, Code: "serviceStackNotFound"}
+		if !absentDuringDelete(e, true) || absentDuringDelete(e, false) {
+			t.Fatal("wrong endpoint absence handling", status)
+		}
 	}
 }
 
